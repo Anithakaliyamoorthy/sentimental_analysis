@@ -61,13 +61,7 @@ if st.button("Analyze"):
             # Display improvement suggestion
             st.info(improvement_suggestion[label])
 
-            # Word cloud
-            st.subheader("Word Cloud of Input Text")
-            wordcloud = WordCloud(background_color='white').generate(text)
-            fig, ax = plt.subplots()
-            ax.imshow(wordcloud, interpolation='bilinear')
-            ax.axis('off')
-            st.pyplot(fig)
+            
     else:
         st.warning("Please enter some text before analyzing.")
 
