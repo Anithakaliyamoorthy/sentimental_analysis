@@ -1,6 +1,5 @@
 import streamlit as st
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
-from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 
 # Load model and tokenizer
