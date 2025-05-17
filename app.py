@@ -14,11 +14,10 @@ st.title("Sentiment Analysis App")
 text = st.text_area("Enter text for sentiment analysis:")
 
 if st.button("Analyze"):
-    if text:
+    if text.strip():
         with st.spinner("Analyzing..."):
             classifier = load_model()
             result = classifier(text)[0]
             st.success(f"Sentiment: {result['label']} (Confidence: {result['score']:.2f})")
     else:
-        st.warning("Please enter some text to analyze.")
-
+        st.warning("Please enter some text.")
