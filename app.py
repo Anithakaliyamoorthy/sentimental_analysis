@@ -3,11 +3,11 @@ from transformers import RobertaTokenizer, RobertaForSequenceClassification
 import torch
 
 # Load tokenizer and model
-model_path = "./roberta_sentiment_model"  # Adjust path if needed
+model_path = "roberta_sentiment_model"
 tokenizer = RobertaTokenizer.from_pretrained(model_path)
 model = RobertaForSequenceClassification.from_pretrained(model_path)
 
-# Device configuration
+# Set model to evaluation mode and move to device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 model.eval()
@@ -18,20 +18,19 @@ def predict_sentiment(text):
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
         outputs = model(**inputs)
-    predicted_class = torch.argmax(outputs.logits, dim=1).item()
-    label_map = {0: "Negative", 1: "Neutral", 2: "Positive"}
-    return label_map[predicted_class]
+    prediction = torch.argmax(outputs.logits, dim=1).item()
+    sentiment_map = {0: "Negative", 1: "Neutral", 2: "Positive"}
+    return sentiment_map[prediction]
 
-# Streamlit app
-st.set_page_config(page_title="Sentiment Classifier", page_icon="🔍")
+# Streamlit UI
 st.title("📝 Amazon Review Sentiment Classifier")
-st.write("Enter a product review below and see its predicted sentiment.")
+st.write("Enter a product review and see the predicted sentiment!")
 
-review_text = st.text_area("Review Text", height=150)
+user_input = st.text_area("Enter Review Text", height=150)
 
-if st.button("Analyze"):
-    if review_text.strip():
-        sentiment = predict_sentiment(review_text)
+if st.button("Predict"):
+    if user_input.strip():
+        sentiment = predict_sentiment(user_input)
         st.success(f"Predicted Sentiment: **{sentiment}**")
     else:
-        st.warning("Please enter some text.")
+        st.warning("Please enter some text to analyze.")
