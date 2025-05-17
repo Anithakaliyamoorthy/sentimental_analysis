@@ -20,54 +20,46 @@ label_map = {
     "LABEL_2": ("Positive", "😊")
 }
 
+# Sentiment improvement suggestions
+improvement_suggestion = {
+    "Negative": "❗ Consider improving product quality or addressing key user complaints.",
+    "Neutral": "💡 Users feel neutral — enhancing value or adding features might improve engagement.",
+    "Positive": "✅ Users are happy — maintain the quality and consider gathering testimonials!"
+}
+
 # App layout
 st.set_page_config(page_title="Sentiment Analysis App", layout="centered")
 st.title("💬 Sentiment Analysis App")
 st.markdown("Enter your text and click **Analyze** to get sentiment with confidence.")
 
-# App features description
-st.markdown("""
-### 🔍 App Features:
-- Analyze sentiment as **Positive**, **Neutral**, or **Negative**.
-- Provides confidence score and **emoji-based feedback**.
-- Generates a **word cloud** from your input.
-- Keeps a history of the last few analyses.
-- Works with real product reviews or your own texts.
-
-Just enter any sentence (like an Amazon product review), and hit **Analyze**!
-""")
-
 # Text input
 text = st.text_area("Enter text for sentiment analysis:", height=150, placeholder="e.g., The product quality is average, not too good or bad.")
-
-# Example buttons
-example_col1, example_col2, example_col3 = st.columns(3)
-if example_col1.button("Example Positive"):
-    text = "I absolutely love this product! Works great."
-if example_col2.button("Example Neutral"):
-    text = "The product is okay. Does the job."
-if example_col3.button("Example Negative"):
-    text = "Terrible experience, completely disappointed."
 
 # Analyze button
 if st.button("Analyze"):
     if text.strip():
         with st.spinner("Analyzing..."):
             result = classifier(text)[0]
-            label, emoji = label_map[result['label']]
+            label_code = result['label']
+            label, emoji = label_map[label_code]
             score = result['score'] * 100
 
+            # Display sentiment
             st.markdown(f"""
             <div style='background-color:#e8f5e9;padding:1.2rem;border-radius:10px;'>
                 <b>Sentiment:</b> {label} {emoji}
             </div>
             """, unsafe_allow_html=True)
 
+            # Display confidence
             st.markdown(f"""
             <div style='background-color:#e3f2fd;padding:1rem;border-radius:10px;'>
                 <b>Confidence:</b> {score:.2f}%
             </div>
             """, unsafe_allow_html=True)
+
+            # Display improvement suggestion
+            st.info(improvement_suggestion[label])
 
             # Word cloud
             st.subheader("Word Cloud of Input Text")
@@ -79,5 +71,6 @@ if st.button("Analyze"):
     else:
         st.warning("Please enter some text before analyzing.")
 
-# Styling with some padding at the bottom
+# Footer style
 st.markdown("<br><hr style='border:0.5px solid #ddd;'><br>", unsafe_allow_html=True)
+
