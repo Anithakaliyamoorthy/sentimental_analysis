@@ -1,14 +1,17 @@
-streamlit==1.32.2
+streamlit
 transformers==4.51.3
-torch==2.0.1
-matplotlib==3.6.3
-shap==0.39.0
-SpeechRecognition==3.10.1
-sounddevice==0.4.6
-wavio==0.0.4
-googletrans==4.0.0-rc1
-streamlit-mic-recorder==0.0.1
-numpy==1.24.0
+torch
+sentencepiece
+shap
+matplotlib
+SpeechRecognition
+soundfile
+ffmpeg-python
+langdetect
+pydub
+scipy
+numpy
+
 
 
 
