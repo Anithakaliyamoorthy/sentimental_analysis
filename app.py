@@ -5,7 +5,6 @@ import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
 import shap
-import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
