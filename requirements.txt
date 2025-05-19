@@ -1,16 +1,16 @@
 streamlit
 transformers==4.51.3
 torch
-sentencepiece
 shap
 matplotlib
+sentencepiece
 SpeechRecognition
-soundfile
-ffmpeg-python
-langdetect
 pydub
 scipy
 numpy
+ffmpeg-python
+langdetect
+
 
 
 
