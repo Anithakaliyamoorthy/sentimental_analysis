@@ -1,13 +1,15 @@
 import streamlit as st
+import requests
+import tempfile
+import torch
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
 from langdetect import detect
-import whisper
-import tempfile
-import shap
-import torch
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
-# Load RoBERTa sentiment model with caching
+# AssemblyAI API Key
+ASSEMBLYAI_API_KEY = "your_assemblyai_api_key_here"
+
+# Load RoBERTa model
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -17,6 +19,7 @@ def load_model():
 
 classifier, tokenizer, model = load_model()
 
+# Label map for results
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
@@ -24,54 +27,74 @@ label_map = {
 }
 
 suggestions = {
-    "Negative": "❗ Address negative feedback with improved service or product changes.",
-    "Neutral": "💡 Consider improving engagement with more interactive or valuable content.",
-    "Positive": "✅ Maintain quality and encourage customer reviews to build trust!"
+    "Negative": "❗ Improve service or content based on negative feedback.",
+    "Neutral": "💡 Try to make content more engaging.",
+    "Positive": "✅ Keep up the good work and ask users for more feedback!"
 }
 
-st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
-st.title("🔍 Sentiment Analyzer with Voice, SHAP & Multilingual Support")
-st.markdown("Analyze sentiment from **text** or **audio** with explainability.")
+st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
+st.title("🔍 RoBERTa Sentiment Analyzer with Voice & Visualization")
+st.markdown("Analyze sentiment from **text** or **voice** and visualize the result interactively.")
 
-# 1. Text input
+# Text Input
 st.header("📝 Enter Text")
-text_input = st.text_area("Type or paste text below:", placeholder="e.g., I love the product quality!", height=150)
+text_input = st.text_area("Type or paste your text below:", height=150)
 
-# 2. Audio input
-st.header("🎤 Upload Audio File (WAV, MP3, or others supported by Whisper)")
-audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=["wav", "mp3", "m4a", "mp4", "webm"])
+# Audio Input
+st.header("🎤 Upload Audio File")
+audio_file = st.file_uploader("Upload a WAV or MP3 audio file", type=["wav", "mp3"])
 
 transcribed_text = ""
 if audio_file:
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(audio_file.read())
-            audio_path = tmp.name
+    st.info("Transcribing audio using AssemblyAI...")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+        tmp.write(audio_file.read())
+        tmp_path = tmp.name
 
-        # Load whisper model once and cache it
-        @st.cache_resource
-        def load_whisper_model():
-            return whisper.load_model("base")
+    # Upload to AssemblyAI
+    headers = {"authorization": ASSEMBLYAI_API_KEY}
+    upload_res = requests.post("https://api.assemblyai.com/v2/upload",
+                               headers=headers, data=open(tmp_path, "rb"))
 
-        whisper_model = load_whisper_model()
+    if upload_res.status_code == 200:
+        audio_url = upload_res.json()["upload_url"]
+        transcript_res = requests.post("https://api.assemblyai.com/v2/transcript",
+                                       headers=headers,
+                                       json={"audio_url": audio_url})
+        transcript_id = transcript_res.json()["id"]
 
-        # Transcribe audio using Whisper
-        result = whisper_model.transcribe(audio_path)
-        transcribed_text = result["text"]
-        st.success(f"Transcribed Text: {transcribed_text}")
-    except Exception as e:
-        st.error(f"Audio processing error: {e}")
+        # Poll status
+        status = "processing"
+        with st.spinner("Processing transcription..."):
+            while status != "completed":
+                poll_res = requests.get(f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                                        headers=headers)
+                status = poll_res.json()["status"]
+                if status == "completed":
+                    transcribed_text = poll_res.json()["text"]
+                elif status == "error":
+                    st.error("❌ Transcription failed.")
+                    break
+    else:
+        st.error("❌ Audio upload failed.")
 
-# Final input to analyze
-text_to_analyze = transcribed_text if transcribed_text else text_input
+if transcribed_text:
+    st.success(f"🗣️ Transcribed Text: {transcribed_text}")
 
+# Decide final text
+final_text = transcribed_text if transcribed_text else text_input
+
+# Analyze Sentiment
 if st.button("🔍 Analyze Sentiment"):
-    if text_to_analyze.strip():
-        with st.spinner("Analyzing..."):
-            lang = detect(text_to_analyze)
-            st.info(f"🌐 Detected Language: {lang.upper()}")
+    if final_text.strip():
+        with st.spinner("Analyzing sentiment..."):
+            try:
+                lang = detect(final_text)
+                st.info(f"🌐 Detected Language: {lang.upper()}")
+            except:
+                st.warning("⚠️ Could not detect language.")
 
-            result = classifier(text_to_analyze)[0]
+            result = classifier(final_text)[0]
             label_code = result['label']
             label, emoji = label_map[label_code]
             score = result['score'] * 100
@@ -80,30 +103,23 @@ if st.button("🔍 Analyze Sentiment"):
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
-            # SHAP explanation
-            st.subheader("📊 SHAP Explanation (Why this prediction?)")
+            # 🌟 Plotly Visualization
+            st.subheader("📊 Visualize Sentiment Scores")
+            inputs = tokenizer(final_text, return_tensors="pt", truncation=True, padding=True)
+            with torch.no_grad():
+                logits = model(**inputs).logits
+                probs = torch.nn.functional.softmax(logits, dim=1).squeeze().tolist()
 
-            def f(X):
-                inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
-                with torch.no_grad():
-                    logits = model(**inputs).logits
-                return torch.nn.functional.softmax(logits, dim=1).cpu().numpy()
-
-            explainer = shap.Explainer(f, tokenizer)
-            shap_values = explainer([text_to_analyze])
-
-            # Text plot
-            fig_text, ax_text = plt.subplots()
-            shap.plots.text(shap_values[0], display=False)
-            st.pyplot(fig_text)
-
-            # Bar plot
-            fig_bar, ax_bar = plt.subplots()
-            shap.plots.bar(shap_values[0], show=False)
-            st.pyplot(fig_bar)
+            labels = ["Negative", "Neutral", "Positive"]
+            fig = go.Figure(go.Bar(
+                x=labels,
+                y=probs,
+                marker_color=["crimson", "gray", "limegreen"]
+            ))
+            fig.update_layout(title="Sentiment Score Distribution", yaxis_title="Probability", xaxis_title="Sentiment")
+            st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Please enter text or upload an audio file to analyze.")
+        st.warning("Please enter text or upload an audio file first.")
 
-st.markdown("<hr><center>Built with 🤖 RoBERTa, Whisper, SHAP, and Streamlit</center>", unsafe_allow_html=True)
-
-
+st.markdown("---")
+st.caption("Built with 🤖 RoBERTa, 🧠 AssemblyAI, 📊 Plotly & Streamlit")
