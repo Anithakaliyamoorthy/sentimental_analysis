@@ -3,13 +3,10 @@ transformers==4.51.3
 torch
 shap
 matplotlib
-sentencepiece
-SpeechRecognition
-pydub
-scipy
-numpy
-ffmpeg-python
+speechrecognition
 langdetect
+pydub
+ffmpeg-python
 
 
 
