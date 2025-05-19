@@ -1,5 +1,6 @@
 streamlit
 transformers==4.51.3
+torch
 shap
 matplotlib
 sentencepiece
@@ -9,6 +10,7 @@ scipy
 numpy
 ffmpeg-python
 langdetect
+
 
 
 
