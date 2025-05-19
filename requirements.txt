@@ -1,9 +1,11 @@
-streamlit
+streamlit==1.35.0
+speechrecognition==3.10.1
 transformers==4.51.3
-torch
-langdetect
-speechrecognition
-matplotlib
+torch>=2.0.0
+plotly==5.22.0
+pydub==0.25.1
+
+
 
 
 
