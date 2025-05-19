@@ -7,7 +7,7 @@ from langdetect import detect
 import plotly.graph_objects as go
 
 # AssemblyAI API Key
-ASSEMBLYAI_API_KEY = "your_assemblyai_api_key_here"
+ASSEMBLYAI_API_KEY = "38c7d7ea134e44c9b073c0454978b3ee"
 
 # Load RoBERTa model
 @st.cache_resource
