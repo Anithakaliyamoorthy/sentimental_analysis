@@ -1,100 +1,103 @@
 import streamlit as st
+from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
 import speech_recognition as sr
+from langdetect import detect
 import tempfile
-import os
-from transformers import pipeline
-import plotly.express as px
+import torch
+import matplotlib.pyplot as plt
 
-# 🔧 Set Streamlit page config FIRST
-st.set_page_config(page_title="🎙️ Sentiment Voice Analyzer", layout="centered")
+st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
 
-# 🎯 Load sentiment model (DistilBERT) - cached for efficiency
 @st.cache_resource
 def load_model():
-    return pipeline("sentiment-analysis")
+    model_name = "cardiffnlp/twitter-roberta-base-sentiment"
+    tokenizer = RobertaTokenizer.from_pretrained(model_name)
+    model = RobertaForSequenceClassification.from_pretrained(model_name)
+    return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
 
-sentiment_analyzer = load_model()
+classifier = load_model()
 
-# 📌 Label map with emojis
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
     "LABEL_2": ("Positive", "😊")
 }
 
-# UI Title
-st.title("🎙️ Sentiment Analyzer from Voice & Text")
+suggestions = {
+    "Negative": "❗ Address negative feedback with improved service or product changes.",
+    "Neutral": "💡 Try to make content more engaging.",
+    "Positive": "✅ Keep up the great work and promote customer reviews!"
+}
 
-# Tabs for Audio or Text Input
-tab1, tab2 = st.tabs(["🎧 Audio Upload", "📝 Text Input"])
+st.title("🔍 RoBERTa Sentiment Analyzer with Text & Audio Upload Support")
+st.markdown("Analyze **text** or **upload audio** for sentiment.")
 
-with tab1:
-    st.write("Upload an audio file (WAV, MP3, FLAC, AIFF) for transcription and sentiment analysis.")
-    uploaded_file = st.file_uploader("🔊 Upload Audio", type=["wav", "mp3", "flac", "aiff"])
+# 1. Text Input
+st.header("📝 Enter Text")
+text_input = st.text_area("Type or paste text below:", placeholder="e.g., I love the product quality!", height=150)
 
-    if uploaded_file:
-        # Save audio to temp file
+# 2. Audio Upload
+st.header("📁 Upload Audio File")
+audio_file = st.file_uploader("Upload WAV or MP3 file", type=["wav", "mp3"])
+
+transcribed_text = ""
+
+if audio_file:
+    try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-            tmp_file.write(uploaded_file.read())
+            tmp_file.write(audio_file.read())
             tmp_path = tmp_file.name
 
         recognizer = sr.Recognizer()
-        try:
-            with sr.AudioFile(tmp_path) as source:
-                audio = recognizer.record(source)
-            transcribed_text = recognizer.recognize_google(audio)
-            st.success("✅ Transcription successful!")
-            st.markdown(f"**📝 Transcribed Text:** {transcribed_text}")
+        with sr.AudioFile(tmp_path) as source:
+            audio_data = recognizer.record(source)
 
-            # Sentiment analysis
-            result = sentiment_analyzer(transcribed_text)[0]
-            label = result["label"]
-            score = round(result["score"] * 100, 2)
+        transcribed_text = recognizer.recognize_google(audio_data)
+        st.success(f"🎧 Transcribed from upload: {transcribed_text}")
+    except Exception as e:
+        st.error(f"❌ Audio processing error: {e}")
 
-            # Map label to emoji and name
-            sentiment_name, emoji = label_map.get(label, ("Unknown", "❓"))
+# Choose which text to analyze
+final_text = transcribed_text if transcribed_text else text_input
 
-            st.subheader(f"{emoji} {sentiment_name} ({score}%)")
+# Sentiment Analysis Button
+if st.button("🔍 Analyze Sentiment"):
+    if final_text.strip():
+        with st.spinner("Analyzing..."):
+            try:
+                lang = detect(final_text)
+                st.info(f"🌐 Detected Language: {lang.upper()}")
+            except:
+                st.info("🌐 Language detection failed")
 
-            # Visualization with Plotly
-            fig = px.bar(
-                x=["Confidence"],
-                y=[score],
-                labels={"x": "Sentiment Confidence (%)", "y": "Score"},
-                title=f"Sentiment Confidence: {sentiment_name}",
-                range_y=[0, 100],
-            )
-            st.plotly_chart(fig)
+            result = classifier(final_text)[0]
+            label_code = result['label']
+            label, emoji = label_map.get(label_code, ("Unknown", "❓"))
+            confidence = result['score'] * 100
 
-        except sr.UnknownValueError:
-            st.error("😕 Could not understand audio.")
-        except sr.RequestError as e:
-            st.error(f"🔌 Google Speech Recognition error: {e}")
-        except Exception as e:
-            st.error(f"⚠️ Audio processing error: {e}")
+            st.success(f"Sentiment: **{label}** {emoji}")
+            st.write(f"Confidence: **{confidence:.2f}%**")
+            st.info(suggestions.get(label, ""))
 
-        os.remove(tmp_path)
+            # Visualization
+            st.subheader("📊 Sentiment Confidence")
+            labels = ["Negative", "Neutral", "Positive"]
+            scores = [0, 0, 0]
+            try:
+                index = int(label_code[-1])
+                scores[index] = confidence / 100.0  # fraction
+            except:
+                pass
 
-with tab2:
-    st.write("Or directly enter text below to analyze sentiment.")
-    user_text = st.text_area("Enter text for sentiment analysis", height=150)
+            fig, ax = plt.subplots()
+            ax.bar(labels, scores, color=["red", "gray", "green"])
+            ax.set_ylim(0, 1)
+            ax.set_ylabel("Confidence")
+            st.pyplot(fig)
+    else:
+        st.warning("⚠️ Please enter text or upload an audio file.")
 
-    if st.button("Analyze Sentiment", key="text_analyze") and user_text.strip() != "":
-        result = sentiment_analyzer(user_text)[0]
-        label = result["label"]
-        score = round(result["score"] * 100, 2)
-        sentiment_name, emoji = label_map.get(label, ("Unknown", "❓"))
-
-        st.subheader(f"{emoji} {sentiment_name} ({score}%)")
-
-        fig = px.bar(
-            x=["Confidence"],
-            y=[score],
-            labels={"x": "Sentiment Confidence (%)", "y": "Score"},
-            title=f"Sentiment Confidence: {sentiment_name}",
-            range_y=[0, 100],
-        )
-        st.plotly_chart(fig)
+st.markdown("<hr><center>Made with 🤖 RoBERTa & 🎙️ Streamlit</center>", unsafe_allow_html=True)
 
 
 
