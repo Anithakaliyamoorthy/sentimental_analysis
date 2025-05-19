@@ -1,13 +1,15 @@
-streamlit>=1.30.0
-transformers>=4.51.3
-torch>=2.0.0
-matplotlib>=3.7.0
-shap>=0.44.0
-SpeechRecognition>=3.8.1
-pyaudio>=0.2.13
+streamlit==1.32.2
+transformers==4.51.3
+torch==2.0.1
+matplotlib==3.6.3
+shap==0.39.0
+SpeechRecognition==3.10.1
+sounddevice==0.4.6
+wavio==0.0.4
 googletrans==4.0.0-rc1
-streamlit_mic_recorder>=0.0.4
-numpy>=1.24.0
+streamlit-mic-recorder==0.0.1
+numpy==1.24.0
+
 
 
 
