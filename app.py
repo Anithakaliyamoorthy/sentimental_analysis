@@ -1,115 +1,73 @@
 import streamlit as st
-from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
+from streamlit_audio_recorder import audio_recorder
 import speech_recognition as sr
-from langdetect import detect
-import tempfile
-import torch
-import matplotlib.pyplot as plt
-from streamlit_audio_recorder import st_audiorecorder
+from transformers import pipeline
+from pydub import AudioSegment
+import plotly.graph_objects as go
+import io
 
+# ✅ Must be first Streamlit command
 st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
 
-@st.cache_resource
-def load_model():
-    model_name = "cardiffnlp/twitter-roberta-base-sentiment"
-    tokenizer = RobertaTokenizer.from_pretrained(model_name)
-    model = RobertaForSequenceClassification.from_pretrained(model_name)
-    return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+# Load sentiment analysis pipeline
+analyzer = pipeline("sentiment-analysis")
 
-classifier = load_model()
-
-label_map = {
-    "LABEL_0": ("Negative", "😠"),
-    "LABEL_1": ("Neutral", "😐"),
-    "LABEL_2": ("Positive", "😊")
-}
-
+# Emoji-based suggestions
 suggestions = {
-    "Negative": "❗ Address negative feedback with improved service or product changes.",
-    "Neutral": "💡 Try to make content more engaging.",
-    "Positive": "✅ Keep up the great work and promote customer reviews!"
+    "POSITIVE": "👍 Keep up the positive energy!",
+    "NEGATIVE": "🛠 Consider refining your message.",
+    "NEUTRAL": "💡 Try to make content more engaging."
 }
 
-st.title("🔍 RoBERTa Sentiment Analyzer with Voice & Text Support")
-st.markdown("Analyze **text**, **microphone input**, or **audio upload** for sentiment.")
+# Title and option selector
+st.title("🎙️ Voice + Text Sentiment Analyzer")
+input_mode = st.radio("Choose input method:", ["🎤 Microphone", "⌨️ Manual Text"], horizontal=True)
 
-# 1. Text Input
-st.header("📝 Enter Text")
-text_input = st.text_area("Type or paste text below:", placeholder="e.g., I love the product quality!", height=150)
+user_text = ""
 
-# 2. Mic Recording
-st.header("🎤 Record your voice")
-audio_bytes = st_audiorecorder()
+if input_mode == "🎤 Microphone":
+    st.info("Click 'Start Recording' and then 'Stop Recording' to analyze your voice.")
+    audio_bytes = audio_recorder(pause_threshold=1.0)
 
-transcribed_text = ""
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/wav")
 
-if audio_bytes:
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-            tmp_wav.write(audio_bytes)
-            tmp_wav_path = tmp_wav.name
-        
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(tmp_wav_path) as source:
-            audio_data = recognizer.record(source)
-        
-        transcribed_text = recognizer.recognize_google(audio_data)
-        st.success(f"🎧 Transcribed from mic: {transcribed_text}")
-    except Exception as e:
-        st.error(f"❌ Audio processing error: {e}")
+        try:
+            # Convert to AudioSegment
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+            wav_io = io.BytesIO()
+            audio.export(wav_io, format="wav")
+            wav_io.seek(0)
 
-# 3. Audio Upload
-st.header("📁 Or Upload Audio File")
-audio_file = st.file_uploader("Upload WAV or MP3 file", type=["wav", "mp3"])
+            # Transcribe using SpeechRecognition
+            r = sr.Recognizer()
+            with sr.AudioFile(wav_io) as source:
+                audio_data = r.record(source)
+                user_text = r.recognize_google(audio_data)
+                st.success(f"📝 Transcribed Text: {user_text}")
 
-if audio_file and not transcribed_text:
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-            tmp_file.write(audio_file.read())
-            tmp_path = tmp_file.name
+        except Exception as e:
+            st.error(f"Audio processing error: {str(e)}")
 
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(tmp_path) as source:
-            audio_data = recognizer.record(source)
+elif input_mode == "⌨️ Manual Text":
+    user_text = st.text_area("Enter your text here:")
 
-        transcribed_text = recognizer.recognize_google(audio_data)
-        st.success(f"🎧 Transcribed from upload: {transcribed_text}")
-    except Exception as e:
-        st.error(f"❌ Audio processing error: {e}")
+# Perform sentiment analysis
+if user_text:
+    result = analyzer(user_text)[0]
+    label = result['label']
+    score = result['score']
 
-# Choose which text to analyze
-final_text = transcribed_text if transcribed_text else text_input
+    st.subheader(f"Sentiment: {label} ({score:.2f})")
+    st.write(suggestions.get(label.upper(), "📘"))
 
-# Sentiment Analysis
-if st.button("🔍 Analyze Sentiment"):
-    if final_text.strip():
-        with st.spinner("Analyzing..."):
-            lang = detect(final_text)
-            st.info(f"🌐 Detected Language: {lang.upper()}")
-
-            result = classifier(final_text)[0]
-            label_code = result['label']
-            label, emoji = label_map[label_code]
-            confidence = result['score'] * 100
-
-            st.success(f"Sentiment: **{label}** {emoji}")
-            st.write(f"Confidence: **{confidence:.2f}%**")
-            st.info(suggestions[label])
-
-            # Visualization
-            st.subheader("📊 Sentiment Confidence")
-            labels = ["Negative", "Neutral", "Positive"]
-            scores = [0, 0, 0]
-            scores[int(label_code[-1])] = confidence / 100.0  # confidence score as fraction
-
-            fig, ax = plt.subplots()
-            ax.bar(labels, scores, color=["red", "gray", "green"])
-            ax.set_ylim(0, 1)
-            ax.set_ylabel("Confidence")
-            st.pyplot(fig)
-    else:
-        st.warning("⚠️ Please enter text, record voice, or upload an audio file.")
-
-st.markdown("<hr><center>Made with 🤖 RoBERTa & 🎙️ Streamlit</center>", unsafe_allow_html=True)
-
+    # Plot bar graph
+    fig = go.Figure(go.Bar(
+        x=[label],
+        y=[score],
+        marker_color="skyblue",
+        name="Confidence"
+    ))
+    fig.update_layout(title="Sentiment Confidence", yaxis=dict(range=[0, 1]))
+    st.plotly_chart(fig)
 
