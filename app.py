@@ -1,127 +1,101 @@
 import streamlit as st
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
-import matplotlib.pyplot as plt
+from langdetect import detect
+import speech_recognition as sr
+from pydub import AudioSegment
+import tempfile
 import shap
 import torch
+import matplotlib.pyplot as plt
 import numpy as np
-import tempfile
-import sounddevice as sd
-import wavio
-import speech_recognition as sr
-from googletrans import Translator
 
-# Load model and tokenizer
+# Cache model loading
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
     tokenizer = RobertaTokenizer.from_pretrained(model_name)
     model = RobertaForSequenceClassification.from_pretrained(model_name)
-    return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer), model, tokenizer
+    return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer), tokenizer, model
 
-classifier, model, tokenizer = load_model()
+classifier, tokenizer, model = load_model()
 
-# SHAP explainer setup (for explanation visualization)
-def explain_prediction(text, model, tokenizer):
-    tokens = tokenizer([text], return_tensors='pt', truncation=True)
-    explainer = shap.Explainer(lambda x: model(x)[0].detach().numpy(), tokenizer)
-    shap_values = explainer(tokens['input_ids'].numpy())
-    return shap_values
-
-# Emoji mapping
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
     "LABEL_2": ("Positive", "😊")
 }
 
-# Suggestions
-improvement_suggestion = {
-    "Negative": "❗ Consider improving product quality or addressing key user complaints.",
-    "Neutral": "💡 Users feel neutral — enhancing value or adding features might improve engagement.",
-    "Positive": "✅ Users are happy — maintain the quality and consider gathering testimonials!"
+suggestions = {
+    "Negative": "❗ Address negative feedback with improved service or product changes.",
+    "Neutral": "💡 Consider improving engagement with more interactive or valuable content.",
+    "Positive": "✅ Maintain quality and encourage customer reviews to build trust!"
 }
 
-# UI Layout
-st.set_page_config(page_title="Sentiment Analysis App", layout="centered")
-st.title("💬 Sentiment Analysis App")
-st.markdown("Enter your text or use voice input to get sentiment analysis, explanation, and improvement tips.")
+st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
+st.title("🔍 Sentiment Analyzer with Voice, SHAP & Multilingual Support")
+st.markdown("This app uses RoBERTa to analyze sentiment from **text** or **audio** with explainability.")
 
-# Multilingual translation
-translator = Translator()
+# ========== 1. Text Input ==========
+st.header("📝 Enter Text")
+text_input = st.text_area("Type or paste text below:", placeholder="e.g., I love the product quality!", height=150)
 
-# Text input
-text = st.text_area("Enter text for sentiment analysis:", height=150, placeholder="e.g., The product quality is average, not too good or bad.")
+# ========== 2. Audio Input ==========
+st.header("🎤 Upload Audio File (WAV or MP3)")
+audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=["wav", "mp3"])
 
-# Voice Input
-if st.button("Use Voice Input"):
-    duration = 5  # seconds
-    fs = 44100
-    st.info("Recording voice for 5 seconds...")
-    recording = sd.rec(int(duration * fs), samplerate=fs, channels=1)
-    sd.wait()
+transcribed_text = ""
+if audio_file:
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio_path = tmp.name
+            audio_data = audio_file.read()
+            tmp.write(audio_data)
 
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-    wavio.write(temp_file.name, recording, fs, sampwidth=2)
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(audio_path) as source:
+            audio = recognizer.record(source)
 
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(temp_file.name) as source:
-        audio_data = recognizer.record(source)
-        try:
-            text = recognizer.recognize_google(audio_data)
-            st.success(f"Transcribed Text: {text}")
-        except sr.UnknownValueError:
-            st.error("Could not understand audio.")
-        except sr.RequestError:
-            st.error("Could not request results from Google Speech Recognition service.")
+        transcribed_text = recognizer.recognize_google(audio)
+        st.success(f"Transcribed Text: {transcribed_text}")
+    except Exception as e:
+        st.error("Audio processing error: " + str(e))
 
-# Translation (for multilingual support)
-language_option = st.selectbox("Select language of input text (for translation):", ["English", "Spanish", "French", "German", "Tamil", "Hindi"])
-lang_code_map = {
-    "English": "en",
-    "Spanish": "es",
-    "French": "fr",
-    "German": "de",
-    "Tamil": "ta",
-    "Hindi": "hi"
-}
+# ========== 3. Final Sentiment Input ==========
+text_to_analyze = transcribed_text if transcribed_text else text_input
 
-if language_option != "English" and text:
-    translated = translator.translate(text, src=lang_code_map[language_option], dest='en')
-    text = translated.text
-    st.markdown(f"**Translated to English:** {text}")
-
-# Analyze button
-if st.button("Analyze"):
-    if text.strip():
+if st.button("🔍 Analyze Sentiment"):
+    if text_to_analyze.strip():
         with st.spinner("Analyzing..."):
-            result = classifier(text)[0]
+            lang = detect(text_to_analyze)
+            st.info(f"🌐 Detected Language: {lang.upper()}")
+
+            result = classifier(text_to_analyze)[0]
             label_code = result['label']
             label, emoji = label_map[label_code]
             score = result['score'] * 100
 
-            # Sentiment Output
-            st.markdown(f"""
-            <div style='background-color:#e8f5e9;padding:1.2rem;border-radius:10px;'>
-                <b>Sentiment:</b> {label} {emoji}
-            </div>
-            """, unsafe_allow_html=True)
+            # Display Results
+            st.success(f"Sentiment: **{label}** {emoji}")
+            st.write(f"Confidence Score: **{score:.2f}%**")
+            st.info(suggestions[label])
 
-            st.markdown(f"""
-            <div style='background-color:#e3f2fd;padding:1rem;border-radius:10px;'>
-                <b>Confidence:</b> {score:.2f}%
-            </div>
-            """, unsafe_allow_html=True)
+            # ========== 4. SHAP Explanation ==========
+            st.subheader("📊 SHAP Explanation (Why this prediction?)")
+            # For SHAP, use model logits
+            def f(X):
+                inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
+                with torch.no_grad():
+                    logits = model(**inputs).logits
+                return torch.nn.functional.softmax(logits, dim=1).numpy()
 
-            st.info(improvement_suggestion[label])
-
-            # Word cloud & Explanation
-            st.subheader("Model Explanation with SHAP")
-            st.write("(SHAP explanation is simulated due to limitations in HuggingFace transformers + SHAP compatibility.)")
-            st.markdown("For production, SHAP explanations would highlight influential words.")
+            explainer = shap.Explainer(f, tokenizer)
+            shap_values = explainer([text_to_analyze])
+            shap.plots.text(shap_values[0], display=False)
+            st.pyplot(bbox_inches='tight')
 
     else:
-        st.warning("Please enter or speak some text before analyzing.")
+        st.warning("Please enter text or upload an audio file to analyze.")
 
 # Footer
-st.markdown("<br><hr style='border:0.5px solid #ddd;'><br>", unsafe_allow_html=True)
-st.markdown("Made with ❤️ using RoBERTa + Streamlit")
+st.markdown("<br><hr style='border:0.5px solid #ccc;'><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
+
