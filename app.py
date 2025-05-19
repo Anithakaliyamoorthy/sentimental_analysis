@@ -1,4 +1,9 @@
 import streamlit as st
+
+# ✅ Set Streamlit page configuration FIRST
+st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
+
+# ========== All other imports ==========
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
 from langdetect import detect
 import speech_recognition as sr
@@ -10,10 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import io
 
-# ✅ THIS MUST BE FIRST Streamlit command
-st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
-
-# ✅ Model Loading
+# ========== Load model and tokenizer ==========
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -21,9 +23,9 @@ def load_model():
     model = RobertaForSequenceClassification.from_pretrained(model_name)
     return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer), tokenizer, model
 
-
 classifier, tokenizer, model = load_model()
 
+# ========== Label and suggestions ==========
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
@@ -36,9 +38,9 @@ suggestions = {
     "Positive": "✅ Maintain quality and encourage customer reviews to build trust!"
 }
 
-st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
+# ========== UI Layout ==========
 st.title("🔍 Sentiment Analyzer with Voice, SHAP & Multilingual Support")
-st.markdown("This app uses RoBERTa to analyze sentiment from **text** or **audio** with explainability.")
+st.markdown("This app uses **RoBERTa** to analyze sentiment from **text** or **audio** with explainability using **SHAP**.")
 
 # ========== 1. Text Input ==========
 st.header("📝 Enter Text")
@@ -51,20 +53,24 @@ audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=[
 transcribed_text = ""
 if audio_file:
     try:
-        audio_bytes = audio_file.read()
-        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)  # 16-bit PCM WAV
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            audio.export(tmp.name, format="wav")
-            audio_path = tmp.name
+        # Convert to WAV if it's MP3
+        if audio_file.type == "audio/mpeg":
+            sound = AudioSegment.from_mp3(audio_file)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
+                sound.export(tmp_wav.name, format="wav")
+                audio_path = tmp_wav.name
+        else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                tmp.write(audio_file.read())
+                audio_path = tmp.name
 
         recognizer = sr.Recognizer()
         with sr.AudioFile(audio_path) as source:
-            audio_data = recognizer.record(source)
+            audio = recognizer.record(source)
 
-        transcribed_text = recognizer.recognize_google(audio_data)
-        st.success(f"🗣 Transcribed Text: {transcribed_text}")
+        transcribed_text = recognizer.recognize_google(audio)
+        st.success(f"Transcribed Text: {transcribed_text}")
+
     except Exception as e:
         st.error("Audio processing error: " + str(e))
 
@@ -75,20 +81,21 @@ if st.button("🔍 Analyze Sentiment"):
     if text_to_analyze.strip():
         with st.spinner("Analyzing..."):
             lang = detect(text_to_analyze)
-            st.info(f"🌐 Detected Language: {lang.upper()}")
+            st.info(f"🌐 Detected Language: **{lang.upper()}**")
 
             result = classifier(text_to_analyze)[0]
             label_code = result['label']
             label, emoji = label_map[label_code]
             score = result['score'] * 100
 
+            # Display Results
             st.success(f"Sentiment: **{label}** {emoji}")
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
             # ========== 4. SHAP Explanation ==========
             st.subheader("📊 SHAP Explanation (Why this prediction?)")
-            
+
             def f(X):
                 inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
                 with torch.no_grad():
@@ -97,6 +104,9 @@ if st.button("🔍 Analyze Sentiment"):
 
             explainer = shap.Explainer(f, tokenizer)
             shap_values = explainer([text_to_analyze])
+
+            # Render SHAP Explanation
+            shap_output = io.StringIO()
             shap.plots.text(shap_values[0], display=False)
             st.pyplot(bbox_inches='tight')
 
@@ -104,4 +114,5 @@ if st.button("🔍 Analyze Sentiment"):
         st.warning("Please enter text or upload an audio file to analyze.")
 
 # Footer
-st.markdown("<br><hr style='border:0.5px solid #ccc;'><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
+st.markdown("<br><hr style='border:0.5px solid #ccc;'><center>Built with 🤖 RoBERTa, 🎤 SpeechRecognition, and 📊 SHAP</center>", unsafe_allow_html=True)
+
