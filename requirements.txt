@@ -1,7 +1,7 @@
 streamlit
 transformers==4.51.3
 shap
-torch
+torch==1.13.1
 matplotlib
 sentencepiece
 SpeechRecognition
@@ -10,6 +10,7 @@ scipy
 numpy
 ffmpeg-python
 langdetect
+
 
 
 
