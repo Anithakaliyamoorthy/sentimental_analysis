@@ -1,8 +1,8 @@
+# ✅ MUST BE THE VERY FIRST THING
 import streamlit as st
-
-# ✅ MUST BE FIRST Streamlit command
 st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
 
+# Other imports
 import requests
 import tempfile
 import torch
@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 # 🔐 AssemblyAI API Key
 ASSEMBLYAI_API_KEY = "your_assemblyai_api_key_here"
 
-# Load RoBERTa model
+# Load model
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -30,21 +30,22 @@ label_map = {
     "LABEL_2": ("Positive", "😊")
 }
 
+# Suggestions
 suggestions = {
     "Negative": "❗ Improve service or content based on negative feedback.",
     "Neutral": "💡 Try to make content more engaging.",
     "Positive": "✅ Keep up the good work and ask users for more feedback!"
 }
 
-# UI
+# --- Streamlit App ---
 st.title("🔍 RoBERTa Sentiment Analyzer with Voice & Visualization")
 st.markdown("Analyze sentiment from **text** or **voice** and visualize the result interactively.")
 
-# Text Input
+# Input
 st.header("📝 Enter Text")
 text_input = st.text_area("Type or paste your text below:", height=150)
 
-# Audio Input
+# Audio input
 st.header("🎤 Upload Audio File")
 audio_file = st.file_uploader("Upload a WAV or MP3 audio file", type=["wav", "mp3"])
 
@@ -56,21 +57,18 @@ if audio_file:
         tmp_path = tmp.name
 
     headers = {"authorization": ASSEMBLYAI_API_KEY}
-    upload_res = requests.post("https://api.assemblyai.com/v2/upload",
-                               headers=headers, data=open(tmp_path, "rb"))
+    upload_res = requests.post("https://api.assemblyai.com/v2/upload", headers=headers, data=open(tmp_path, "rb"))
 
     if upload_res.status_code == 200:
         audio_url = upload_res.json()["upload_url"]
-        transcript_res = requests.post("https://api.assemblyai.com/v2/transcript",
-                                       headers=headers,
+        transcript_res = requests.post("https://api.assemblyai.com/v2/transcript", headers=headers,
                                        json={"audio_url": audio_url})
         transcript_id = transcript_res.json()["id"]
 
         status = "processing"
         with st.spinner("Processing transcription..."):
             while status != "completed":
-                poll_res = requests.get(f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
-                                        headers=headers)
+                poll_res = requests.get(f"https://api.assemblyai.com/v2/transcript/{transcript_id}", headers=headers)
                 status = poll_res.json()["status"]
                 if status == "completed":
                     transcribed_text = poll_res.json()["text"]
@@ -83,10 +81,10 @@ if audio_file:
 if transcribed_text:
     st.success(f"🗣️ Transcribed Text: {transcribed_text}")
 
-# Use text input or transcribed audio
+# Use either text input or transcribed audio
 final_text = transcribed_text if transcribed_text else text_input
 
-# Analyze
+# Analyze sentiment
 if st.button("🔍 Analyze Sentiment"):
     if final_text.strip():
         with st.spinner("Analyzing sentiment..."):
@@ -105,7 +103,7 @@ if st.button("🔍 Analyze Sentiment"):
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
-            # 📊 Plotly Visualization
+            # Plotly bar chart
             st.subheader("📊 Sentiment Score Distribution")
             inputs = tokenizer(final_text, return_tensors="pt", truncation=True, padding=True)
             with torch.no_grad():
@@ -125,4 +123,5 @@ if st.button("🔍 Analyze Sentiment"):
 
 st.markdown("---")
 st.caption("Built with 🤖 RoBERTa, 🧠 AssemblyAI, 📊 Plotly & Streamlit")
+
 
