@@ -2,8 +2,9 @@ streamlit
 transformers==4.51.3
 torch
 langdetect
-requests
-plotly
+speechrecognition
+matplotlib
+
 
 
 
