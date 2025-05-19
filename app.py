@@ -5,83 +5,96 @@ import os
 from transformers import pipeline
 import plotly.express as px
 
-# 🔧 Streamlit config - Must be first
-st.set_page_config(page_title="🎙️ Sentiment Voice & Text Analyzer", layout="centered")
+# 🔧 Set Streamlit page config FIRST
+st.set_page_config(page_title="🎙️ Sentiment Voice Analyzer", layout="centered")
 
-# 🎯 Load sentiment analysis model
+# 🎯 Load sentiment model (DistilBERT) - cached for efficiency
 @st.cache_resource
 def load_model():
     return pipeline("sentiment-analysis")
 
 sentiment_analyzer = load_model()
 
-# 💡 Style definitions
-sentiment_styles = {
-    "POSITIVE": ("🟢 Positive", "👍 Keep it up!"),
-    "NEGATIVE": ("🔴 Negative", "⚠️ Try to improve tone."),
-    "NEUTRAL": ("🟡 Neutral", "💡 Try to make content more engaging.")
+# 📌 Label map with emojis
+label_map = {
+    "LABEL_0": ("Negative", "😠"),
+    "LABEL_1": ("Neutral", "😐"),
+    "LABEL_2": ("Positive", "😊")
 }
 
-st.title("🎙️📄 Sentiment Analyzer")
-st.write("You can either upload a voice file (WAV recommended) or directly type your text for sentiment analysis.")
+# UI Title
+st.title("🎙️ Sentiment Analyzer from Voice & Text")
 
-# 📥 Audio upload
-uploaded_file = st.file_uploader("🔊 Upload Audio File", type=["wav", "mp3", "flac", "aiff"])
+# Tabs for Audio or Text Input
+tab1, tab2 = st.tabs(["🎧 Audio Upload", "📝 Text Input"])
 
-# 🧾 Text input
-text_input = st.text_area("📝 Or type your text here:", placeholder="Type your message here...")
+with tab1:
+    st.write("Upload an audio file (WAV, MP3, FLAC, AIFF) for transcription and sentiment analysis.")
+    uploaded_file = st.file_uploader("🔊 Upload Audio", type=["wav", "mp3", "flac", "aiff"])
 
-def analyze_sentiment(text):
-    sentiment_result = sentiment_analyzer(text)[0]
-    label = sentiment_result["label"].upper()
-    score = round(sentiment_result["score"] * 100, 2)
-    icon, suggestion = sentiment_styles.get(label, ("⚪ Unknown", "No advice available."))
+    if uploaded_file:
+        # Save audio to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
 
-    # 💬 Display Results
-    st.subheader(f"{icon} ({score}%)")
-    st.info(suggestion)
+        recognizer = sr.Recognizer()
+        try:
+            with sr.AudioFile(tmp_path) as source:
+                audio = recognizer.record(source)
+            transcribed_text = recognizer.recognize_google(audio)
+            st.success("✅ Transcription successful!")
+            st.markdown(f"**📝 Transcribed Text:** {transcribed_text}")
 
-    # 📊 Plot confidence
-    fig = px.bar(
-        x=["Positive", "Negative"],
-        y=[sentiment_result["score"] if label == "POSITIVE" else 1 - sentiment_result["score"],
-           sentiment_result["score"] if label == "NEGATIVE" else 1 - sentiment_result["score"]],
-        labels={"x": "Sentiment", "y": "Confidence"},
-        color=["Positive", "Negative"],
-        color_discrete_map={"Positive": "green", "Negative": "red"},
-        title="Sentiment Confidence"
-    )
-    st.plotly_chart(fig)
+            # Sentiment analysis
+            result = sentiment_analyzer(transcribed_text)[0]
+            label = result["label"]
+            score = round(result["score"] * 100, 2)
 
-# 🔎 Process text input
-if text_input:
-    st.write("Analyzing text sentiment...")
-    analyze_sentiment(text_input)
+            # Map label to emoji and name
+            sentiment_name, emoji = label_map.get(label, ("Unknown", "❓"))
 
-# 🎤 Process audio input
-elif uploaded_file:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        tmp_path = tmp_file.name
+            st.subheader(f"{emoji} {sentiment_name} ({score}%)")
 
-    recognizer = sr.Recognizer()
-    try:
-        with sr.AudioFile(tmp_path) as source:
-            audio = recognizer.record(source)
-        transcribed_text = recognizer.recognize_google(audio)
+            # Visualization with Plotly
+            fig = px.bar(
+                x=["Confidence"],
+                y=[score],
+                labels={"x": "Sentiment Confidence (%)", "y": "Score"},
+                title=f"Sentiment Confidence: {sentiment_name}",
+                range_y=[0, 100],
+            )
+            st.plotly_chart(fig)
 
-        st.success("✅ Transcription successful!")
-        st.markdown(f"**📝 Transcribed Text:** {transcribed_text}")
-        analyze_sentiment(transcribed_text)
+        except sr.UnknownValueError:
+            st.error("😕 Could not understand audio.")
+        except sr.RequestError as e:
+            st.error(f"🔌 Google Speech Recognition error: {e}")
+        except Exception as e:
+            st.error(f"⚠️ Audio processing error: {e}")
 
-    except sr.UnknownValueError:
-        st.error("😕 Could not understand the audio.")
-    except sr.RequestError as e:
-        st.error(f"🔌 Could not reach Google API: {e}")
-    except Exception as e:
-        st.error(f"⚠️ Audio error: {e}")
-    finally:
         os.remove(tmp_path)
+
+with tab2:
+    st.write("Or directly enter text below to analyze sentiment.")
+    user_text = st.text_area("Enter text for sentiment analysis", height=150)
+
+    if st.button("Analyze Sentiment", key="text_analyze") and user_text.strip() != "":
+        result = sentiment_analyzer(user_text)[0]
+        label = result["label"]
+        score = round(result["score"] * 100, 2)
+        sentiment_name, emoji = label_map.get(label, ("Unknown", "❓"))
+
+        st.subheader(f"{emoji} {sentiment_name} ({score}%)")
+
+        fig = px.bar(
+            x=["Confidence"],
+            y=[score],
+            labels={"x": "Sentiment Confidence (%)", "y": "Score"},
+            title=f"Sentiment Confidence: {sentiment_name}",
+            range_y=[0, 100],
+        )
+        st.plotly_chart(fig)
 
 
 
