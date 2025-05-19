@@ -1,60 +1,87 @@
 import streamlit as st
-from streamlit_audio_recorder import audio_recorder
 import speech_recognition as sr
+import tempfile
+import os
 from transformers import pipeline
-from pydub import AudioSegment
-import io
+import plotly.express as px
 
-# Set config FIRST
-st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
+# 🔧 Streamlit config - Must be first
+st.set_page_config(page_title="🎙️ Sentiment Voice & Text Analyzer", layout="centered")
 
-# Title
-st.title("🎙️ Voice & Text Sentiment Analyzer")
+# 🎯 Load sentiment analysis model
+@st.cache_resource
+def load_model():
+    return pipeline("sentiment-analysis")
 
-# Sentiment pipeline (HuggingFace)
-sentiment_analyzer = pipeline("sentiment-analysis")
+sentiment_analyzer = load_model()
 
-# --- Voice Input ---
-st.header("🔴 Record Your Voice")
-audio_bytes = audio_recorder(
-    text="Click to record",
-    recording_color="#e53935",
-    neutral_color="#6c757d",
-    icon_name="mic"
-)
+# 💡 Style definitions
+sentiment_styles = {
+    "POSITIVE": ("🟢 Positive", "👍 Keep it up!"),
+    "NEGATIVE": ("🔴 Negative", "⚠️ Try to improve tone."),
+    "NEUTRAL": ("🟡 Neutral", "💡 Try to make content more engaging.")
+}
 
-if audio_bytes:
-    st.audio(audio_bytes, format="audio/wav")
-    st.info("Transcribing audio...")
+st.title("🎙️📄 Sentiment Analyzer")
+st.write("You can either upload a voice file (WAV recommended) or directly type your text for sentiment analysis.")
 
+# 📥 Audio upload
+uploaded_file = st.file_uploader("🔊 Upload Audio File", type=["wav", "mp3", "flac", "aiff"])
+
+# 🧾 Text input
+text_input = st.text_area("📝 Or type your text here:", placeholder="Type your message here...")
+
+def analyze_sentiment(text):
+    sentiment_result = sentiment_analyzer(text)[0]
+    label = sentiment_result["label"].upper()
+    score = round(sentiment_result["score"] * 100, 2)
+    icon, suggestion = sentiment_styles.get(label, ("⚪ Unknown", "No advice available."))
+
+    # 💬 Display Results
+    st.subheader(f"{icon} ({score}%)")
+    st.info(suggestion)
+
+    # 📊 Plot confidence
+    fig = px.bar(
+        x=["Positive", "Negative"],
+        y=[sentiment_result["score"] if label == "POSITIVE" else 1 - sentiment_result["score"],
+           sentiment_result["score"] if label == "NEGATIVE" else 1 - sentiment_result["score"]],
+        labels={"x": "Sentiment", "y": "Confidence"},
+        color=["Positive", "Negative"],
+        color_discrete_map={"Positive": "green", "Negative": "red"},
+        title="Sentiment Confidence"
+    )
+    st.plotly_chart(fig)
+
+# 🔎 Process text input
+if text_input:
+    st.write("Analyzing text sentiment...")
+    analyze_sentiment(text_input)
+
+# 🎤 Process audio input
+elif uploaded_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        tmp_path = tmp_file.name
+
+    recognizer = sr.Recognizer()
     try:
-        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-        wav_io = io.BytesIO()
-        audio.export(wav_io, format="wav")
-        wav_io.seek(0)
+        with sr.AudioFile(tmp_path) as source:
+            audio = recognizer.record(source)
+        transcribed_text = recognizer.recognize_google(audio)
 
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_io) as source:
-            audio_data = recognizer.record(source)
-            transcribed_text = recognizer.recognize_google(audio_data)
-            st.success(f"Transcribed: {transcribed_text}")
+        st.success("✅ Transcription successful!")
+        st.markdown(f"**📝 Transcribed Text:** {transcribed_text}")
+        analyze_sentiment(transcribed_text)
 
-            sentiment = sentiment_analyzer(transcribed_text)[0]
-            st.subheader("📊 Sentiment Result")
-            st.write(f"**Label:** {sentiment['label']}")
-            st.write(f"**Confidence:** {sentiment['score']:.2f}")
-
+    except sr.UnknownValueError:
+        st.error("😕 Could not understand the audio.")
+    except sr.RequestError as e:
+        st.error(f"🔌 Could not reach Google API: {e}")
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"⚠️ Audio error: {e}")
+    finally:
+        os.remove(tmp_path)
 
-# --- Text Input ---
-st.header("✍️ Or Enter Text Manually")
-text_input = st.text_area("Enter your sentence here:")
-
-if st.button("Analyze Sentiment") and text_input:
-    result = sentiment_analyzer(text_input)[0]
-    st.subheader("📊 Sentiment Result")
-    st.write(f"**Label:** {result['label']}")
-    st.write(f"**Confidence:** {result['score']:.2f}")
 
 
