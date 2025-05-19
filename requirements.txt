@@ -3,10 +3,11 @@ transformers==4.51.3
 torch
 shap
 matplotlib
-speechrecognition
 langdetect
-pydub
-ffmpeg-python
+whisper
+pandas
+reportlab
+
 
 
 
