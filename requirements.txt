@@ -1,6 +1,13 @@
-streamlit
-transformers==4.51.3
-torch
-matplotlib
+streamlit>=1.30.0
+transformers>=4.51.3
+torch>=2.0.0
+matplotlib>=3.7.0
+shap>=0.44.0
+SpeechRecognition>=3.8.1
+pyaudio>=0.2.13
+googletrans==4.0.0-rc1
+streamlit_mic_recorder>=0.0.4
+numpy>=1.24.0
+
 
 
