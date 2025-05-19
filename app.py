@@ -2,19 +2,18 @@ import streamlit as st
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
 from langdetect import detect
 import speech_recognition as sr
+from pydub import AudioSegment
 import tempfile
 import shap
 import torch
 import matplotlib.pyplot as plt
 import os
 
-# Ensure ffmpeg/ffprobe path is set (update this path if needed)
-ffmpeg_bin = r"C:\ffmpeg-7.1.1-essentials_build\ffmpeg-7.1.1-essentials_build\bin"
-os.environ["PATH"] += os.pathsep + ffmpeg_bin
+# Ensure ffmpeg/ffprobe path is set (Windows specific)
+os.environ["PATH"] += os.pathsep + r"C:\ffmpeg-7.1.1-essentials_build\ffmpeg-7.1.1-essentials_build\bin"
 
 st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
 
-# Load model with caching
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -50,15 +49,20 @@ audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=[
 transcribed_text = ""
 if audio_file:
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(audio_file.read())
-            audio_path = tmp.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
+            if audio_file.type == "audio/mp3":
+                audio = AudioSegment.from_mp3(audio_file)
+            else:
+                audio = AudioSegment.from_file(audio_file)
+
+            audio.export(tmp_wav.name, format="wav")
+            audio_path = tmp_wav.name
 
         recognizer = sr.Recognizer()
         with sr.AudioFile(audio_path) as source:
-            audio = recognizer.record(source)
+            audio_data = recognizer.record(source)
 
-        transcribed_text = recognizer.recognize_google(audio)
+        transcribed_text = recognizer.recognize_google(audio_data)
         st.success(f"Transcribed Text: {transcribed_text}")
     except Exception as e:
         st.error(f"Audio processing error: {e}")
@@ -84,24 +88,33 @@ if st.button("🔍 Analyze Sentiment"):
             # SHAP explanation
             st.subheader("📊 SHAP Explanation (Why this prediction?)")
 
-            def f(X):
-                inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
+            try:
+                def f(X):
+                    inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
+                    with torch.no_grad():
+                        logits = model(**inputs).logits
+                    return torch.nn.functional.softmax(logits, dim=1).numpy()
+
+                explainer = shap.Explainer(f, tokenizer)
+                shap_values = explainer([text_to_analyze])
+
+                st.markdown("#### 🔍 Text SHAP Plot")
+                shap.plots.text(shap_values[0], display=False)
+                st.pyplot(bbox_inches="tight")
+
+            except Exception as e:
+                st.error(f"SHAP visualization error: {e}")
+                st.write("Raw model output logits for reference:")
+                inputs = tokenizer(text_to_analyze, return_tensors="pt", truncation=True, padding=True)
                 with torch.no_grad():
                     logits = model(**inputs).logits
-                return torch.nn.functional.softmax(logits, dim=1).numpy()
-
-            explainer = shap.Explainer(f, tokenizer)
-            shap_values = explainer([text_to_analyze])
-
-            # Display bar plot instead of text/waterfall (those are often unsupported)
-            st.markdown("#### 🔍 Feature Impact Bar Chart")
-            fig_bar = shap.plots.bar(shap_values[0], show=False)
-            st.pyplot(fig=plt.gcf())
+                st.write(logits.softmax(dim=1))
 
     else:
         st.warning("Please enter text or upload an audio file to analyze.")
 
 st.markdown("<hr><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
+
 
 
 
