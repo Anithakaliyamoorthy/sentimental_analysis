@@ -1,7 +1,6 @@
 streamlit
 transformers==4.51.3
 shap
-torch==1.13.1
 matplotlib
 sentencepiece
 SpeechRecognition
