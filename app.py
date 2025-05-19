@@ -9,10 +9,10 @@ import torch
 import matplotlib.pyplot as plt
 import os
 
-# Ensure ffmpeg/ffprobe path is set (Windows specific)
+# Add FFMPEG path if on Windows
 os.environ["PATH"] += os.pathsep + r"C:\ffmpeg-7.1.1-essentials_build\ffmpeg-7.1.1-essentials_build\bin"
 
-st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
+st.set_page_config(page_title="RoBERTa Sentiment Analyzer", layout="centered")
 
 @st.cache_resource
 def load_model():
@@ -49,12 +49,10 @@ audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=[
 transcribed_text = ""
 if audio_file:
     try:
+        # Convert audio to WAV PCM using pydub
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
-            if audio_file.type == "audio/mp3":
-                audio = AudioSegment.from_mp3(audio_file)
-            else:
-                audio = AudioSegment.from_file(audio_file)
-
+            audio = AudioSegment.from_file(audio_file)
+            audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)  # PCM 16-bit mono
             audio.export(tmp_wav.name, format="wav")
             audio_path = tmp_wav.name
 
@@ -67,7 +65,7 @@ if audio_file:
     except Exception as e:
         st.error(f"Audio processing error: {e}")
 
-# Final input to analyze
+# Final text to analyze
 text_to_analyze = transcribed_text if transcribed_text else text_input
 
 if st.button("🔍 Analyze Sentiment"):
@@ -85,7 +83,7 @@ if st.button("🔍 Analyze Sentiment"):
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
-            # SHAP explanation
+            # SHAP Explanation
             st.subheader("📊 SHAP Explanation (Why this prediction?)")
 
             try:
@@ -98,13 +96,20 @@ if st.button("🔍 Analyze Sentiment"):
                 explainer = shap.Explainer(f, tokenizer)
                 shap_values = explainer([text_to_analyze])
 
-                st.markdown("#### 🔍 Text SHAP Plot")
-                shap.plots.text(shap_values[0], display=False)
-                st.pyplot(bbox_inches="tight")
+                # Try SHAP text plot
+                try:
+                    fig_text = plt.figure()
+                    shap.plots.text(shap_values[0])
+                    st.pyplot(fig_text)
+                except Exception:
+                    # Fallback to bar plot if text plot fails
+                    fig_bar, ax = plt.subplots()
+                    shap.plots.bar(shap_values[0], max_display=10, show=False)
+                    st.pyplot(fig_bar)
 
             except Exception as e:
                 st.error(f"SHAP visualization error: {e}")
-                st.write("Raw model output logits for reference:")
+                st.write("Fallback: Showing raw model logits.")
                 inputs = tokenizer(text_to_analyze, return_tensors="pt", truncation=True, padding=True)
                 with torch.no_grad():
                     logits = model(**inputs).logits
@@ -114,7 +119,3 @@ if st.button("🔍 Analyze Sentiment"):
         st.warning("Please enter text or upload an audio file to analyze.")
 
 st.markdown("<hr><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
-
-
-
-
