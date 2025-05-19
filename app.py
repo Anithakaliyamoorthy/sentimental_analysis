@@ -2,14 +2,12 @@ import streamlit as st
 from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
 from langdetect import detect
 import speech_recognition as sr
-from pydub import AudioSegment
 import tempfile
 import shap
 import torch
 import matplotlib.pyplot as plt
-import numpy as np
 
-# Cache model loading
+# Load model with caching
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -33,13 +31,13 @@ suggestions = {
 
 st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
 st.title("🔍 Sentiment Analyzer with Voice, SHAP & Multilingual Support")
-st.markdown("This app uses RoBERTa to analyze sentiment from **text** or **audio** with explainability.")
+st.markdown("Analyze sentiment from **text** or **audio** with explainability.")
 
-# ========== 1. Text Input ==========
+# 1. Text input
 st.header("📝 Enter Text")
 text_input = st.text_area("Type or paste text below:", placeholder="e.g., I love the product quality!", height=150)
 
-# ========== 2. Audio Input ==========
+# 2. Audio input
 st.header("🎤 Upload Audio File (WAV or MP3)")
 audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=["wav", "mp3"])
 
@@ -47,9 +45,8 @@ transcribed_text = ""
 if audio_file:
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio_file.read())
             audio_path = tmp.name
-            audio_data = audio_file.read()
-            tmp.write(audio_data)
 
         recognizer = sr.Recognizer()
         with sr.AudioFile(audio_path) as source:
@@ -58,9 +55,9 @@ if audio_file:
         transcribed_text = recognizer.recognize_google(audio)
         st.success(f"Transcribed Text: {transcribed_text}")
     except Exception as e:
-        st.error("Audio processing error: " + str(e))
+        st.error(f"Audio processing error: {e}")
 
-# ========== 3. Final Sentiment Input ==========
+# Final input to analyze
 text_to_analyze = transcribed_text if transcribed_text else text_input
 
 if st.button("🔍 Analyze Sentiment"):
@@ -74,14 +71,13 @@ if st.button("🔍 Analyze Sentiment"):
             label, emoji = label_map[label_code]
             score = result['score'] * 100
 
-            # Display Results
             st.success(f"Sentiment: **{label}** {emoji}")
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
-            # ========== 4. SHAP Explanation ==========
+            # SHAP explanation
             st.subheader("📊 SHAP Explanation (Why this prediction?)")
-            # For SHAP, use model logits
+
             def f(X):
                 inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
                 with torch.no_grad():
@@ -92,10 +88,7 @@ if st.button("🔍 Analyze Sentiment"):
             shap_values = explainer([text_to_analyze])
             shap.plots.text(shap_values[0], display=False)
             st.pyplot(bbox_inches='tight')
-
     else:
         st.warning("Please enter text or upload an audio file to analyze.")
 
-# Footer
-st.markdown("<br><hr style='border:0.5px solid #ccc;'><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
-
+st.markdown("<hr><center>Built with 🤖 RoBERTa and Streamlit</center>", unsafe_allow_html=True)
