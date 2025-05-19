@@ -1,26 +1,29 @@
 import streamlit as st
-from transformers import pipeline
-from langdetect import detect
-from googletrans import Translator
-import speech_recognition as sr
-from pydub import AudioSegment
+from transformers import RobertaTokenizer, RobertaForSequenceClassification, pipeline
+import whisper
 import tempfile
-import os
+import shap
+import torch
+import matplotlib.pyplot as plt
+import pandas as pd
+from langdetect import detect
+from reportlab.pdfgen import canvas
+import base64
+from io import BytesIO
 
-# Set page configuration
+# Set page config first
 st.set_page_config(page_title="RoBERTa Sentiment Analyzer", layout="centered")
 
-# Load RoBERTa model
+# Load model
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
-    classifier = pipeline("sentiment-analysis", model=model_name, tokenizer=model_name)
-    return classifier
+    tokenizer = RobertaTokenizer.from_pretrained(model_name)
+    model = RobertaForSequenceClassification.from_pretrained(model_name)
+    return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer), tokenizer, model
 
-classifier = load_model()
-translator = Translator()
+classifier, tokenizer, model = load_model()
 
-# Label map for emoji and suggestion
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
@@ -28,67 +31,43 @@ label_map = {
 }
 
 suggestions = {
-    "Negative": "❗ Address negative feedback with improved service or product changes.",
-    "Neutral": "💡 Consider improving engagement with more interactive or valuable content.",
-    "Positive": "✅ Maintain quality and encourage customer reviews to build trust!"
+    "Negative": "❗ Improve service or address negative feedback.",
+    "Neutral": "💡 Increase engagement or content value.",
+    "Positive": "✅ Maintain quality and encourage feedback!"
 }
 
-# UI Layout
-st.title("🔍 Sentiment Analyzer with Audio & Translation")
-st.markdown("Analyze sentiment from **text** or **audio** input. Supports multilingual input and audio transcription.")
+st.title("🔍 Sentiment Analyzer (Text + Voice) with SHAP, Export & More")
+st.markdown("Analyze text/audio sentiment using RoBERTa with explainability and export options.")
 
-# Input: Text
+# Text Input
 st.header("📝 Enter Text")
-text_input = st.text_area("Type or paste text below:", placeholder="I love the product quality!", height=150)
+text_input = st.text_area("Type or paste text below:", placeholder="e.g., The service was amazing!", height=150)
 
-# Input: Audio
-st.header("🎤 Upload Audio (MP3 or WAV)")
-audio_file = st.file_uploader("Upload audio file for sentiment analysis", type=["mp3", "wav"])
-
-def convert_audio(file, format):
-    sound = AudioSegment.from_file(file)
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    sound.export(temp_file.name, format="wav")
-    return temp_file.name
-
-def transcribe_audio(audio_path):
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(audio_path) as source:
-        audio = recognizer.record(source)
-    return recognizer.recognize_google(audio)
-
+# Audio Upload
+st.header("🎤 Upload Audio File (WAV, MP3, M4A)")
+audio_file = st.file_uploader("Upload an audio file", type=["wav", "mp3", "m4a"])
 transcribed_text = ""
+
 if audio_file:
     try:
-        audio_format = audio_file.name.split('.')[-1]
-        if audio_format not in ["wav", "mp3"]:
-            st.error("Unsupported audio format.")
-        else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{audio_format}") as tmp:
-                tmp.write(audio_file.read())
-                audio_path = convert_audio(tmp.name, "wav") if audio_format == "mp3" else tmp.name
-                transcribed_text = transcribe_audio(audio_path)
-                st.success(f"Transcribed Text: {transcribed_text}")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+            tmp.write(audio_file.read())
+            tmp_path = tmp.name
+
+        model_whisper = whisper.load_model("base")
+        result = model_whisper.transcribe(tmp_path)
+        transcribed_text = result["text"]
+        st.success(f"Transcribed: {transcribed_text}")
     except Exception as e:
         st.error(f"Audio processing error: {e}")
 
-# Final text to analyze
 text_to_analyze = transcribed_text if transcribed_text else text_input
 
-# Analyze Button
 if st.button("🔍 Analyze Sentiment"):
     if text_to_analyze.strip():
         with st.spinner("Analyzing..."):
             lang = detect(text_to_analyze)
-            st.info(f"🌐 Detected Language: {lang.upper()}")
-
-            if lang != "en":
-                try:
-                    translated = translator.translate(text_to_analyze, src=lang, dest="en").text
-                    st.markdown(f"🗨️ Translated Text (EN): *{translated}*")
-                    text_to_analyze = translated
-                except Exception as e:
-                    st.warning(f"Translation failed: {e}")
+            st.info(f"🌍 Language detected: {lang.upper()}")
 
             result = classifier(text_to_analyze)[0]
             label_code = result['label']
@@ -96,10 +75,51 @@ if st.button("🔍 Analyze Sentiment"):
             score = result['score'] * 100
 
             st.success(f"Sentiment: **{label}** {emoji}")
-            st.write(f"Confidence Score: **{score:.2f}%**")
+            st.write(f"Confidence: **{score:.2f}%**")
             st.info(suggestions[label])
-    else:
-        st.warning("Please enter text or upload an audio file to analyze.")
 
-# Footer
-st.markdown("<hr><center>Built with 🤖 RoBERTa, Streamlit, and Google Translate</center>", unsafe_allow_html=True)
+            # SHAP Explainability
+            st.subheader("📊 SHAP Explanation (Bar Plot)")
+
+            def predict_fn(X):
+                inputs = tokenizer(list(X), padding=True, truncation=True, return_tensors="pt")
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                return torch.nn.functional.softmax(outputs.logits, dim=1).detach().numpy()
+
+            explainer = shap.Explainer(predict_fn, tokenizer)
+            shap_values = explainer([text_to_analyze])
+
+            fig, ax = plt.subplots(figsize=(10, 4))
+            shap.plots.bar(shap_values[0], show=False)
+            st.pyplot(fig)
+
+            # Download CSV
+            st.subheader("📥 Download Result as CSV")
+            df = pd.DataFrame([{
+                "Text": text_to_analyze,
+                "Sentiment": label,
+                "Confidence": f"{score:.2f}%",
+                "Suggestion": suggestions[label]
+            }])
+            csv = df.to_csv(index=False).encode()
+            st.download_button("Download CSV", csv, "sentiment_result.csv", "text/csv")
+
+            # Download PDF
+            st.subheader("📄 Download Result as PDF")
+            buffer = BytesIO()
+            c = canvas.Canvas(buffer)
+            c.drawString(100, 800, f"Sentiment Analysis Report")
+            c.drawString(100, 780, f"Text: {text_to_analyze[:80]}...")
+            c.drawString(100, 760, f"Sentiment: {label} ({emoji})")
+            c.drawString(100, 740, f"Confidence: {score:.2f}%")
+            c.drawString(100, 720, f"Suggestion: {suggestions[label]}")
+            c.save()
+            pdf = buffer.getvalue()
+            b64_pdf = base64.b64encode(pdf).decode()
+            st.markdown(f'<a href="data:application/pdf;base64,{b64_pdf}" download="sentiment_report.pdf">📥 Download PDF Report</a>', unsafe_allow_html=True)
+    else:
+        st.warning("Please provide text or upload audio first.")
+
+st.markdown("<hr><center>Built with 🤗 Transformers, Whisper & Streamlit</center>", unsafe_allow_html=True)
+
