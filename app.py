@@ -10,13 +10,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import io
 
-# Cache model loading
+# ✅ THIS MUST BE FIRST Streamlit command
+st.set_page_config(page_title="RoBERTa Sentiment Analysis", layout="centered")
+
+# ✅ Model Loading
 @st.cache_resource
 def load_model():
     model_name = "cardiffnlp/twitter-roberta-base-sentiment"
     tokenizer = RobertaTokenizer.from_pretrained(model_name)
     model = RobertaForSequenceClassification.from_pretrained(model_name)
     return pipeline("sentiment-analysis", model=model, tokenizer=tokenizer), tokenizer, model
+
 
 classifier, tokenizer, model = load_model()
 
