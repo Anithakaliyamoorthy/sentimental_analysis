@@ -1,4 +1,8 @@
 import streamlit as st
+
+# ✅ MUST BE FIRST Streamlit command
+st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
+
 import requests
 import tempfile
 import torch
@@ -6,8 +10,8 @@ from transformers import RobertaTokenizer, RobertaForSequenceClassification, pip
 from langdetect import detect
 import plotly.graph_objects as go
 
-# AssemblyAI API Key
-ASSEMBLYAI_API_KEY = "38c7d7ea134e44c9b073c0454978b3ee"
+# 🔐 AssemblyAI API Key
+ASSEMBLYAI_API_KEY = "your_assemblyai_api_key_here"
 
 # Load RoBERTa model
 @st.cache_resource
@@ -19,7 +23,7 @@ def load_model():
 
 classifier, tokenizer, model = load_model()
 
-# Label map for results
+# Label map
 label_map = {
     "LABEL_0": ("Negative", "😠"),
     "LABEL_1": ("Neutral", "😐"),
@@ -32,7 +36,7 @@ suggestions = {
     "Positive": "✅ Keep up the good work and ask users for more feedback!"
 }
 
-st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
+# UI
 st.title("🔍 RoBERTa Sentiment Analyzer with Voice & Visualization")
 st.markdown("Analyze sentiment from **text** or **voice** and visualize the result interactively.")
 
@@ -51,7 +55,6 @@ if audio_file:
         tmp.write(audio_file.read())
         tmp_path = tmp.name
 
-    # Upload to AssemblyAI
     headers = {"authorization": ASSEMBLYAI_API_KEY}
     upload_res = requests.post("https://api.assemblyai.com/v2/upload",
                                headers=headers, data=open(tmp_path, "rb"))
@@ -63,7 +66,6 @@ if audio_file:
                                        json={"audio_url": audio_url})
         transcript_id = transcript_res.json()["id"]
 
-        # Poll status
         status = "processing"
         with st.spinner("Processing transcription..."):
             while status != "completed":
@@ -81,10 +83,10 @@ if audio_file:
 if transcribed_text:
     st.success(f"🗣️ Transcribed Text: {transcribed_text}")
 
-# Decide final text
+# Use text input or transcribed audio
 final_text = transcribed_text if transcribed_text else text_input
 
-# Analyze Sentiment
+# Analyze
 if st.button("🔍 Analyze Sentiment"):
     if final_text.strip():
         with st.spinner("Analyzing sentiment..."):
@@ -103,8 +105,8 @@ if st.button("🔍 Analyze Sentiment"):
             st.write(f"Confidence Score: **{score:.2f}%**")
             st.info(suggestions[label])
 
-            # 🌟 Plotly Visualization
-            st.subheader("📊 Visualize Sentiment Scores")
+            # 📊 Plotly Visualization
+            st.subheader("📊 Sentiment Score Distribution")
             inputs = tokenizer(final_text, return_tensors="pt", truncation=True, padding=True)
             with torch.no_grad():
                 logits = model(**inputs).logits
@@ -123,3 +125,4 @@ if st.button("🔍 Analyze Sentiment"):
 
 st.markdown("---")
 st.caption("Built with 🤖 RoBERTa, 🧠 AssemblyAI, 📊 Plotly & Streamlit")
+
