@@ -1,43 +1,60 @@
 import streamlit as st
 from streamlit_audio_recorder import audio_recorder
 import speech_recognition as sr
-import io
+from transformers import pipeline
 from pydub import AudioSegment
+import io
 
-# Set Streamlit page config as the FIRST command
-st.set_page_config(page_title="🎙️ Voice Recorder & Transcriber", layout="centered")
+# Set config FIRST
+st.set_page_config(page_title="🎙️ Sentiment Analyzer", layout="centered")
 
-st.title("🎙️ Voice Recorder & Transcriber")
-st.markdown("Record your voice and transcribe it using Google's Speech Recognition.")
+# Title
+st.title("🎙️ Voice & Text Sentiment Analyzer")
 
-# Record audio
-audio_bytes = audio_recorder(text="Click to record", recording_color="#e53935", neutral_color="#6c757d", icon_name="microphone")
+# Sentiment pipeline (HuggingFace)
+sentiment_analyzer = pipeline("sentiment-analysis")
 
-# Display player
+# --- Voice Input ---
+st.header("🔴 Record Your Voice")
+audio_bytes = audio_recorder(
+    text="Click to record",
+    recording_color="#e53935",
+    neutral_color="#6c757d",
+    icon_name="mic"
+)
+
 if audio_bytes:
     st.audio(audio_bytes, format="audio/wav")
-    st.info("Transcribing... Please wait.")
+    st.info("Transcribing audio...")
 
     try:
-        # Convert bytes to WAV for recognizer
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
         wav_io = io.BytesIO()
         audio.export(wav_io, format="wav")
         wav_io.seek(0)
 
-        # Transcribe using Google
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_io) as source:
             audio_data = recognizer.record(source)
-            text = recognizer.recognize_google(audio_data)
-            st.success("✅ Transcription:")
-            st.write(f"🗣️ **{text}**")
+            transcribed_text = recognizer.recognize_google(audio_data)
+            st.success(f"Transcribed: {transcribed_text}")
 
-    except sr.UnknownValueError:
-        st.error("Google could not understand the audio.")
-    except sr.RequestError as e:
-        st.error(f"Could not request results from Google Speech Recognition service; {e}")
+            sentiment = sentiment_analyzer(transcribed_text)[0]
+            st.subheader("📊 Sentiment Result")
+            st.write(f"**Label:** {sentiment['label']}")
+            st.write(f"**Confidence:** {sentiment['score']:.2f}")
+
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
+        st.error(f"Error: {e}")
+
+# --- Text Input ---
+st.header("✍️ Or Enter Text Manually")
+text_input = st.text_area("Enter your sentence here:")
+
+if st.button("Analyze Sentiment") and text_input:
+    result = sentiment_analyzer(text_input)[0]
+    st.subheader("📊 Sentiment Result")
+    st.write(f"**Label:** {result['label']}")
+    st.write(f"**Confidence:** {result['score']:.2f}")
 
 
