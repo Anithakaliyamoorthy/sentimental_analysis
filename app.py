@@ -93,32 +93,34 @@ if st.button("🔍 Analyze Sentiment"):
             explainer = shap.Explainer(f, tokenizer)
             shap_values = explainer([text_to_analyze])
 
-            # 1) Text explanation (highlight words)
-            fig1, ax1 = plt.subplots(figsize=(10, 3))
-            shap.plots.text(shap_values[0], ax=ax1)
-            st.pyplot(fig1)
+          # 1) Text explanation (highlight words)
+shap.plots.text(shap_values[0], display=False)
+fig1 = plt.gcf()
+st.pyplot(fig1)
+plt.clf()
 
-            # 2) Bar plot of SHAP values per token
-            st.subheader("📈 SHAP Bar Plot")
-            tokens = shap_values.data[0]
-            values = shap_values.values[0, :, label_code[-1] == '0' and 0 or int(label_code[-1])]  # select correct class index
+# 2) Bar plot of SHAP values per token
+st.subheader("📈 SHAP Bar Plot")
+tokens = shap_values.data[0]
+values = shap_values.values[0, :, int(label_code[-1])]
 
-            # To ensure values shape correctness:
-            values = shap_values.values[0, :, int(label_code[-1])]
+fig2, ax2 = plt.subplots(figsize=(10, 4))
+colors = ['red' if v < 0 else 'green' for v in values]
+ax2.bar(range(len(tokens)), values, color=colors)
+ax2.set_xticks(range(len(tokens)))
+ax2.set_xticklabels(tokens, rotation=45, ha="right")
+ax2.set_ylabel("SHAP value")
+ax2.set_title("SHAP values per token")
+st.pyplot(fig2)
+plt.clf()
 
-            fig2, ax2 = plt.subplots(figsize=(10, 4))
-            colors = ['red' if v < 0 else 'green' for v in values]
-            ax2.bar(range(len(tokens)), values, color=colors)
-            ax2.set_xticks(range(len(tokens)))
-            ax2.set_xticklabels(tokens, rotation=45, ha="right")
-            ax2.set_ylabel("SHAP value")
-            ax2.set_title("SHAP values per token")
-            st.pyplot(fig2)
+# 3) Waterfall chart for contribution of tokens to prediction
+st.subheader("🌊 SHAP Waterfall Chart")
+shap.waterfall_plot(shap_values[0], max_display=20)
+fig3 = plt.gcf()
+st.pyplot(fig3)
+plt.clf()
 
-            # 3) Waterfall chart for contribution of tokens to prediction
-            st.subheader("🌊 SHAP Waterfall Chart")
-            shap.waterfall_plot(shap_values[0], max_display=20)
-            st.pyplot(bbox_inches='tight')
     else:
         st.warning("Please enter text or upload an audio file to analyze.")
 
